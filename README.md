@@ -18,3 +18,67 @@
         <img src="http://img.shields.io/badge/swift-4.1-brightgreen.svg" alt="Swift 4.1">
     </a>
 </center>
+
+* `Model` 
+
+```swift
+final class User: Codable {
+    var id: UUID?
+    var name: String
+    var age: Int
+    
+    init(name: String, age: Int) {
+        self.name = name
+        self.age = age
+    }
+}
+
+extension User: SQLiteUUIDModel { }
+extension User: Content { }
+extension User: Migration { }
+extension User: Parameter { }
+```
+
+* `Controller` 
+
+```swift
+struct UsersController: RouteCollection {
+    
+    func boot(router: Router) throws {
+        let usersRoute = router.grouped("api", "users")
+        usersRoute.get(User.parameter, use: fetch)
+        usersRoute.get(use: fetchAll)
+        usersRoute.post(use: create)
+        usersRoute.delete(User.parameter, use: delete)
+        usersRoute.put(User.parameter, use: update)
+    }
+    
+    private func fetch(_ request: Request) throws -> Future<User> {
+        return try request.parameters.next(User.self)
+    }
+    
+    private func fetchAll(_ request: Request) throws -> Future<[User]> {
+        return User.query(on: request).all()
+    }
+    
+    private func create(_ request: Request) throws -> Future<User> {
+        return try request.content.decode(User.self).flatMap {
+            $0.save(on: request)
+        }
+    }
+    
+    private func delete(_ request: Request) throws -> Future<HTTPStatus> {
+        return try request.parameters.next(User.self).flatMap(to: HTTPStatus.self, {
+            $0.delete(on: request).transform(to: .noContent)
+        })
+    }
+    
+    private func update(_ request: Request) throws -> Future<User> {
+        return flatMap(to: User.self, try request.parameters.next(User.self), try request.content.decode(User.self), { (user, updatedUser) in
+            user.name = updatedUser.name
+            user.age = updatedUser.age
+            return user.save(on: request)
+        })
+    }
+}
+```
